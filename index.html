@@ -190,6 +190,7 @@ h1 em{font-style:normal;color:var(--coral)}
 .micbig.on{animation:micp 1s infinite;background:var(--leaf);box-shadow:0 8px 0 var(--leaf-deep)}
 .micbig:disabled{opacity:.5}
 .ghostgo{background:#fff;color:var(--ink);box-shadow:0 7px 0 rgba(23,58,94,.18);font-size:22px}
+.practice.spk2{bottom:calc(98px + env(safe-area-inset-bottom,0px));background:var(--sea);box-shadow:0 6px 0 var(--sea-deep)}.practice.spk2.off{filter:grayscale(.8);opacity:.6}
 </style>
 
 <div id="app"></div>
@@ -385,13 +386,18 @@ function buildLesson(node){
   const ex=[];
   if(node.t==="lesson"){
     const ws=node.ws, rev=reviewPick(node.ui===0&&node.li===0?0:3, ws);
-    ws.forEach(k=>{ ex.push({t:"intro",w:k}); ex.push({t:"listen",w:k}); });
+    const mic=micOK();
+    ws.forEach(k=>{ ex.push({t:"intro",w:k}); ex.push({t:"listen",w:k}); if(mic) ex.push({t:"speak",w:k}); });
     ex.push({t:"pairs",ws:ws.slice(0,3)});
     ex.push({t:"sound",w:ws[0]});
     rev.forEach((k,i)=>ex.push({t:i%2?"sound":"listen",w:k}));
     ex.push({t:"listen",w:ws[1]||ws[0]});
     if(ws[2]) ex.push({t:"sound",w:ws[2]});
-    if(node.li>0 || node.ui>0) ex.push({t:"speak",w:pick(ws)});
+    if(!mic && (node.li>0 || node.ui>0)) ex.push({t:"speak",w:pick(ws)});
+  } else if(node.t==="speakdrill"){
+    let ks=learned().sort((a,b)=>P.words[a].s-P.words[b].s);
+    if(ks.length<4) ks=[...new Set(ks.concat(UNITS[0].items.map((_,i)=>"0:"+i)))];
+    shuffle(ks.slice(0,10)).slice(0,6).forEach(k=>ex.push({t:"speak",w:k}));
   } else {
     const pool = node.t==="trophy" ? UNITS[node.ui].items.map((_,i)=>node.ui+":"+i) : reviewPick(9,[]);
     const ks=shuffle(pool);
@@ -416,6 +422,12 @@ function startNode(i){
   if(i>P.pos){ tone("no"); say([["Prima finisci la lezione che salta, oppure usa salta qui!","it"]]); toast("🔒 Finisci la lezione che salta, oppure ⏩ Salta qui"); return; }
   if(n.t==="chest"){ openChest(i); return; }
   L={ nodeIdx:i, node:n, q:buildLesson(n), i:0, graded:0, right:0, mistakes:0, combo:0, said:{} };
+  screen="lesson"; armExit=false; enterEx();
+}
+function startSpeak(){
+  if(!micOK()){ const m=!SRC?"Questo browser non riconosce la voce: usa Safari sull'iPad o Chrome sul computer.":inFrame?"🎤 Il microfono funziona solo dal tuo sito su GitHub, non dentro Claude.":"🎤 Il microfono è spento: accendilo nell'area genitori 👪."; toast(m); say([["Il microfono funziona solo dal tuo sito.","it"]]); return; }
+  const n={t:"speakdrill"};
+  L={ nodeIdx:-1, node:n, q:buildLesson(n), i:0, graded:0, right:0, mistakes:0, combo:0, said:{} };
   screen="lesson"; armExit=false; enterEx();
 }
 function startPractice(){
@@ -727,11 +739,13 @@ function renderHome(a){
   });
   h+=`<div class="center"><div class="mascot-side">${MASCOT}</div><h1>Hai finito tutto il percorso?<br><em>Fantastico!</em></h1><p style="margin:0">Nuove unità in arrivo.</p></div>`;
   h+=`<button class="practice" id="pr" aria-label="Ripasso" ${learned().length<4?"disabled":""}>💪</button>`;
+  h+=`<button class="practice spk2 ${micOK()?"":"off"}" id="spk" aria-label="Pronuncia con il microfono">🎤</button>`;
   a.innerHTML=h;
   a.querySelectorAll("[data-n]").forEach(b=>b.onclick=()=>startNode(+b.dataset.n));
   a.querySelectorAll("[data-skip]").forEach(b=>b.onclick=()=>jumpTo(+b.dataset.skip));
   a.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{ const ui=+b.dataset.go; document.getElementById("u"+ui)?.scrollIntoView({block:"start",behavior:"smooth"}); });
   $("#pr").onclick=startPractice;
+  $("#spk").onclick=startSpeak;
   const sb=$("#snkBtn"); if(sb) sb.onclick=startSnake;
   $("#parentBtn").onclick=()=>{ parentArm=""; screen="parent"; render(); window.scrollTo(0,0); };
   const now=a.querySelector(".node.now"); if(now && jumpArm<0 && !renderHome.done){ renderHome.done=true; setTimeout(()=>{ try{ now.scrollIntoView({block:"center",behavior:"smooth"}); }catch(e){} },80); }
@@ -770,7 +784,7 @@ function renderLesson(a){
       <div class="word">${w.en}</div><div class="ask">${ear}</div>
       ${micOK()?`<div class="microw"><button class="micbig ${L.listening?"on":""}" id="mic" aria-label="Parla" ${L.state!=="ans"?"disabled":""}>🎤</button></div>
       <p class="sub heard" style="text-align:center;margin:0;font-weight:700">${L.state==="ok"?`${"⭐".repeat(L.pron||2)} «${L.heard}»`:micMsg()}</p>`
-      :`<p class="sub" style="text-align:center;margin:0;font-weight:700">${MASCOT} Ripeti ad alta voce! Poi tocca ✔</p>`}`;
+      :`<p class="sub" style="text-align:center;margin:0;font-weight:700">${MASCOT} Ripeti ad alta voce! Poi tocca ✔</p>${SRC&&inFrame?`<p class="sub" style="text-align:center;margin:0;font-size:14px">🎤 Il controllo della pronuncia funziona dal vostro sito su GitHub</p>`:""}`}`;
   }
   // foglio in basso
   let d="";
