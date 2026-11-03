@@ -687,7 +687,7 @@ function finishLesson(){
   const goalHit = !goalBefore && P.day.xp>=P.goal;
   let sticker=null;
   if(L.nodeIdx===P.pos && L.nodeIdx>=0) P.pos++;
-  P.snk=Math.min(3,(P.snk||0)+1);
+  if(!SNSAVE) P.snk=Math.min(3,(P.snk||0)+1);
   if(n.t==="trophy"){ sticker=UNITS[n.ui].st; if(!P.stickers.includes(sticker)) P.stickers.push(sticker); }
   save();
   END={xp, perfect, acc: L.graded? Math.round(L.right/L.graded*100):100, streakUp, goalHit, sticker, trophy:n.t==="trophy", unit:n.ui};
@@ -727,7 +727,23 @@ function snakePool(){
   if(ks.length<4){ const first=Object.keys(W).filter(k=>W[k].u===0); ks=[...new Set(ks.concat(first))]; }
   return ks;
 }
+/* dopo ogni quadro: pausa, una lezione, poi si torna al serpente */
+let SNSAVE=null;
+function snakeToLesson(){
+  const g=G; cancelAnimationFrame(g.raf); document.removeEventListener("keydown",g.kd); document.removeEventListener("keyup",g.ku);
+  SNSAVE={lvl:g.lvl+1,score:g.score,right:g.right,wrong:g.wrong,len:g.me.len,pool:g.pool}; g.over=true; G=null;
+  let i=P.pos; while(i<NODES.length&&NODES[i].t==="chest") i++;
+  say([["Bravo! Ora una lezione, poi si torna al serpente!","it"]],()=>{});
+  if(i<NODES.length&&i<=P.pos+1){ P.pos=Math.max(P.pos,i); startNode(i); } else startPractice();
+  if(screen!=="lesson"){ resumeSnake(); }
+}
+function resumeSnake(){
+  const s=SNSAVE; if(!s) return; SNSAVE=null;
+  G={pool:s.pool,lvl:s.lvl,got:0,score:s.score,right:s.right,wrong:s.wrong,over:false,items:[],dots:[],target:null,tx:null,ty:null,keys:{},pops:[],pause:0,resumeLen:s.len};
+  screen="snake"; render(); say([["Si torna al serpente!","it"]]);
+}
 function startSnake(){
+  if(SNSAVE){ resumeSnake(); return; }
   if((P.snk||0)<=0){ toast("🐍 Finisci una lezione per giocare!"); say([["Finisci una lezione e poi puoi giocare al serpente!","it"]]); return; }
   P.snk--; save();
   G={pool:snakePool(),lvl:0,got:0,score:0,right:0,wrong:0,over:false,items:[],dots:[],target:null,tx:null,ty:null,keys:{},pops:[],pause:0};
@@ -773,7 +789,7 @@ function setupMap(first){
   G.decoP=M.deco.map((e,i)=>({e,x:20+((i*137)%97)/97*(Wd-40),y:20+((i*71+30)%89)/89*(Hd-40)})).filter(d=>!sBlocked(d.x,d.y,20)&&!inPond(d.x,d.y,1.3));
   G.ducks=G.ponds.map(p=>({p,a:Math.random()*6}));
   const st=freeSpot(true);
-  G.me=mkSnake(st[0],st[1],-Math.PI/2,first?10:Math.max(10,G.me?Math.min(G.me.len,22):10),SN_COLORS[0],false);
+  G.me=mkSnake(st[0],st[1],-Math.PI/2,G.resumeLen?Math.min(G.resumeLen,22):first?10:Math.max(10,G.me?Math.min(G.me.len,22):10),SN_COLORS[0],false); G.resumeLen=0;
   G.ais=[0,1].map(i=>{ const [x,y]=freeSpot(); return mkSnake(x,y,Math.random()*6,8,SN_COLORS[i+1],true); });
   G.dots=[]; for(let i=0;i<24;i++) addDot();
   const lv=$("#sglv"); if(lv) lv.innerHTML=SMAPS.map((m,i)=>`<span class="${i<G.lvl?"done":i===G.lvl?"on":""}">${i<G.lvl?"✔":m.ic} ${i===G.lvl?m.nm:""}</span>`).join("");
@@ -816,10 +832,10 @@ const segs=s=>{ const out=[]; for(let i=0;i<s.len;i++){ const p=s.path[Math.min(
 function levelDone(now){
   G.pause=now+2600; G.items.forEach(i=>i.el&&i.el.remove()); G.items=[]; G.target=null; tone("win"); confetti();
   const last=G.lvl>=SMAPS.length-1, o=$("#sgo");
-  if(o){ o.innerHTML=`<div>⭐ Quadro superato! ⭐<small>${last?"Hai esplorato tutto il regno!":"Prossimo: "+SMAPS[G.lvl+1].ic+" "+SMAPS[G.lvl+1].nm}</small></div>`; o.classList.add("show"); }
+  if(o){ o.innerHTML=`<div>⭐ Quadro superato! ⭐<small>${last?"Hai esplorato tutto il regno!":"Ora una lezione, poi: "+SMAPS[G.lvl+1].ic+" "+SMAPS[G.lvl+1].nm}</small></div>`; o.classList.add("show"); }
   say([["Quadro superato!","it"],["Well done!","en"]]);
   setTimeout(()=>{ if(!G||G.over) return; const o2=$("#sgo"); if(o2) o2.classList.remove("show");
-    if(last){ G.cleared=true; snakeEnd(false); return; } G.lvl++; setupMap(false); },2600);
+    if(last){ G.cleared=true; snakeEnd(false); return; } snakeToLesson(); },2600);
 }
 function snakeLoop(now){
   if(!G||screen!=="snake") return;
@@ -1236,7 +1252,7 @@ function topHome(){
     <div class="pill" title="Punti">⭐ ${P.xp}</div>
     <div class="pill" title="Obiettivo di oggi">${ringSvg()} ${dayXp()}/${P.goal}</div>
     <div class="grow"></div>
-    <button class="round sgbtn ${(P.snk||0)>0?"":"off"}" id="snkBtn" aria-label="Gioca al serpente">🐍${(P.snk||0)>0?`<b>${P.snk}</b>`:""}</button>
+    <button class="round sgbtn ${(P.snk||0)>0||SNSAVE?"":"off"}" id="snkBtn" aria-label="Gioca al serpente">🐍${SNSAVE?`<b>▶</b>`:(P.snk||0)>0?`<b>${P.snk}</b>`:""}</button>
     <button class="round" id="parentBtn" aria-label="Area genitori">👪</button>
   </div>`;
 }
@@ -1403,7 +1419,7 @@ function renderEnd(a){
     </div>
     ${E.goalHit?`<div class="chip">🎉 Obiettivo di oggi raggiunto!</div>`:""}
     ${E.sticker?`<div class="album">${UNITS.map(u=>`<span class="${P.stickers.includes(u.st)?"":"off"}">${u.st}</span>`).join("")}</div>`:""}
-    ${(P.snk||0)>0?`<button class="go wide sgplay" id="snk">🐍 Premio: gioca al serpente!</button>`:""}
+    ${SNSAVE?`<button class="go wide sgplay" id="snk">🐍 Torna al serpente: quadro ${SNSAVE.lvl+1} ${SMAPS[SNSAVE.lvl].ic}</button>`:(P.snk||0)>0?`<button class="go wide sgplay" id="snk">🐍 Premio: gioca al serpente!</button>`:""}
   </div><div class="dock"><button class="go wide" id="home" aria-label="Continua">➜</button></div>`;
   $("#home").onclick=()=>{ screen="home"; render(); };
   const sk=$("#snk"); if(sk) sk.onclick=startSnake;
